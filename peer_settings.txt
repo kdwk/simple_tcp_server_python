@@ -1,0 +1,8 @@
+p0 localhost 12000
+p1 localhost 12001
+p2 localhost 12002
+p3 localhost 12003
+p4 localhost 12004
+p5 localhost 12005
+p6 localhost 12006
+p7 localhost 12007
