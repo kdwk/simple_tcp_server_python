@@ -27,6 +27,9 @@ def log(message: str):
 def path(path: str) -> str:
     return (Path(__file__).parent / path).resolve().as_posix()
 
+def parentFolderName() -> str:
+    return Path(__file__).parent.name
+
 def served(filename: str) -> str:
     return path(f"served_files/{filename}")
 
@@ -283,7 +286,7 @@ class Response:
         return f"{self.code.value} {self.content}"
     
     def toDisplayString(self) -> str:
-        if "#UPLOAD" in self.content and "chunk " in self.content:
+        if "chunk " in self.content and not "received" in self.content:
             content = " ".join(self.content.split(" ", 4)[:4])
             return f"{self.code.value} {content}"
         return self.toString()

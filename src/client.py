@@ -1,4 +1,4 @@
-from server import served, readSettings, CommandType, UserCommand, Command, Response, ResponseCode, sever, reintegrate, getsize
+from server import served, readSettings, CommandType, UserCommand, Command, Response, ResponseCode, sever, reintegrate, getsize, parentFolderName
 from socket import socket, AF_INET, SOCK_STREAM, error as SocketError
 from os.path import exists
 from threading import Thread, RLock
@@ -67,12 +67,14 @@ class ClientWorker(Thread):
     serverId: str
     download: PartialDownload | None
     downloadChunkIds: list[int] | None
+    clientId: str
 
     def __init__(self, group=None, target=None, name=None, args=..., kwargs=None, *, daemon=None):
         super().__init__(group, target, name, args, kwargs, daemon=daemon)
         self.clientSocket = socket(AF_INET, SOCK_STREAM)
         self.clientSocket.settimeout(0.5)
         self.serverId = kwargs["serverId"]
+        self.clientId = kwargs["clientId"]
         self.serverAddr, self.serverPort = kwargs["server"]
         self.download = kwargs["download"]
         self.downloadChunkIds = kwargs["downloadChunkIds"]
@@ -137,7 +139,8 @@ class ClientWorker(Thread):
             response = self.getResponse(
                 Command(CommandType.UPLOAD, filename=name, chunk=i, content=chunk))
             if response is None or not response.code.ok():
-                return error(f"File {name} upload failed")
+                print(f"File {name} upload failed")
+                return
             if i == len(chunks) - 1 and response.content == f"File {name} received":
                 print(f"File {name} upload success")
             
@@ -204,6 +207,7 @@ class ClientWorker(Thread):
 class Client:
     servers: dict[str, tuple[str, int]]  # Map server ids to (addr, port)
     download: PartialDownload | None
+    id: str
 
     def __init__(self):
         global debug
@@ -211,6 +215,7 @@ class Client:
             debug = True
         self.servers = readSettings()
         self.download = None
+        self.id = parentFolderName()
 
     def getResponse(self, command: Command, clientSocket: socket | None) -> Response | None:
         if clientSocket is None:
@@ -221,11 +226,16 @@ class Client:
         except SocketError:
             return error(f"Could not connect to {self.servers[id]}")
         responseStr = ""
+        start = time_ns()
         while not responseStr.endswith("\n"):
+            now = time_ns()
+            if now - start > 1E9:
+                return error("Timeout while receiving")
             buffer = clientSocket.recv(1024)
             if len(buffer) == 0:
                 return error(f"Server closed connection")
             responseStr += buffer.decode()
+            sleep(0.01)
         return Response.fromSafeString(responseStr)
 
     def newSocket(self, server: tuple[str, int]) -> socket | None:
@@ -255,7 +265,7 @@ class Client:
             noOfChunks = 0
             if userCommand.type == CommandType.UPLOAD and userCommand.filename is not None:
                 if not exists(served(userCommand.filename)):
-                    print(f"Peer self_id does not serve file {userCommand.filename}")
+                    print(f"Peer {self.id} does not serve file {userCommand.filename}")
                     continue
                 print(f"Uploading {userCommand.filename}")
             if userCommand.type == CommandType.DOWNLOAD and userCommand.filename is not None:
@@ -277,16 +287,21 @@ class Client:
                         clientSocket.close()
                 log(f"Confirmed valid peers: {validPeers}")
 
+            if len(validPeers) == 0:
+                print(f"File {userCommand.filename} {userCommand.type.toString().lower()} failed, peers {" ".join(userCommand.ids)} are not serving the file")
+                continue
+
             workers: list[ClientWorker] = []
 
             workerConfigs = [
                 {
-                    "serverId": id,
-                    "server": self.servers[id],
+                    "serverId": serverId,
+                    "clientId": self.id,
+                    "server": self.servers[serverId],
                     "userCommand": userCommand,
                     "download": self.download,
                     "downloadChunkIds": [] if userCommand.type == CommandType.DOWNLOAD else None
-                } for id in validPeers
+                } for serverId in validPeers
             ]
             if userCommand.type == CommandType.DOWNLOAD:
                 for chunk in range(noOfChunks):
@@ -303,6 +318,8 @@ class Client:
                     continue
             for worker in workers:
                 worker.join()
+            if self.download is not None and not self.download.isComplete():
+                print(f"File {userCommand.filename} download failed")
             self.download = None
 
 
