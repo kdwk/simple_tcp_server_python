@@ -6,4 +6,4 @@ p4 localhost 12004
 p5 localhost 12005
 p6 localhost 12006
 p7 localhost 12007
-pc Kdwk-Desktop 12008
+pc Kdwk-Desktop.local 12008

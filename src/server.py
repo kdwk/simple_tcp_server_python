@@ -368,7 +368,6 @@ class ServerWorker(Thread):
                             self.uploads.pop(command.filename)
                             self.workerUploads.remove(command.filename)
                             return Response(code=ResponseCode(200), content=f"File {command.filename} received")
-                        return
                     return Response(code=ResponseCode(200), content=f"File {command.filename} chunk {command.chunk} received")
             case CommandType.DOWNLOAD:
                 if command.chunk is None:  # Declare download intention
